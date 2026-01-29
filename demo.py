@@ -166,9 +166,47 @@ class Hand(object):
                 strokes[:, 0] += left_padding
 
             prev_eos = 1.0
+            prev_x, prev_y = 0, 0
             p = "M{},{} ".format(0, 0)
+            
+            # Calculate threshold for detecting word boundaries
+            # Large gaps in x-direction typically indicate spaces between words
+            x_coords = strokes[:, 0]
+            if len(x_coords) > 1:
+                x_diffs = np.abs(np.diff(x_coords))
+                # Use median of non-zero differences as baseline
+                non_zero_diffs = x_diffs[x_diffs > 0]
+                if len(non_zero_diffs) > 0:
+                    median_diff = np.median(non_zero_diffs)
+                    # Threshold: 3x the median difference indicates a word boundary
+                    word_boundary_threshold = 3 * median_diff
+                else:
+                    word_boundary_threshold = 10  # fallback
+            else:
+                word_boundary_threshold = 10  # fallback
+            
             for x, y, eos in zip(*strokes.T):
-                p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
+                # Calculate distance from previous point
+                distance = np.sqrt((x - prev_x)**2 + (y - prev_y)**2)
+                
+                # Use 'M' (move) only for:
+                # 1. The first point (prev_eos == 1.0 and prev_x == 0)
+                # 2. Large gaps that indicate word boundaries
+                if prev_eos == 1.0:
+                    if prev_x == 0 and prev_y == 0:
+                        # First point, always use M
+                        p += 'M{},{} '.format(x, y)
+                    elif distance > word_boundary_threshold:
+                        # Large gap, likely a space between words
+                        p += 'M{},{} '.format(x, y)
+                    else:
+                        # Small gap, within a word - use L to keep pen down
+                        p += 'L{},{} '.format(x, y)
+                else:
+                    # Normal continuation, use L
+                    p += 'L{},{} '.format(x, y)
+                
+                prev_x, prev_y = x, y
                 prev_eos = eos
             path = svgwrite.path.Path(p)
             path = path.stroke(color=color, width=width, linecap='round').fill("none")
