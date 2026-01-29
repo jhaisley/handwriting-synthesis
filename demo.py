@@ -165,45 +165,55 @@ class Hand(object):
                 left_padding = 60
                 strokes[:, 0] += left_padding
 
-            prev_eos = 1.0
-            prev_x, prev_y = 0, 0
-            p = "M{},{} ".format(0, 0)
-            
             # Calculate threshold for detecting word boundaries
-            # Large gaps in x-direction typically indicate spaces between words
+            # Large gaps typically indicate spaces between words
             x_coords = strokes[:, 0]
-            if len(x_coords) > 1:
-                x_diffs = np.abs(np.diff(x_coords))
-                # Use median of non-zero differences as baseline
-                non_zero_diffs = x_diffs[x_diffs > 0]
-                if len(non_zero_diffs) > 0:
-                    median_diff = np.median(non_zero_diffs)
-                    # Threshold: 3x the median difference indicates a word boundary
-                    word_boundary_threshold = 3 * median_diff
+            
+            # Use 2D distances for consistency
+            coords_2d = strokes[:, :2]
+            if len(coords_2d) > 1:
+                # Calculate distances between consecutive points
+                diffs = np.diff(coords_2d, axis=0)
+                distances = np.linalg.norm(diffs, axis=1)
+                non_zero_distances = distances[distances > 0]
+                
+                if len(non_zero_distances) > 0:
+                    median_distance = np.median(non_zero_distances)
+                    # Threshold: gaps larger than 3x median indicate word boundaries
+                    # This factor was chosen empirically to distinguish between 
+                    # letter spacing (typically 1-2x median) and word spacing
+                    WORD_BOUNDARY_FACTOR = 3.0
+                    word_boundary_threshold = WORD_BOUNDARY_FACTOR * median_distance
                 else:
-                    word_boundary_threshold = 10  # fallback
+                    # Fallback: use a fraction of the coordinate range
+                    coord_range = np.ptp(coords_2d, axis=0).max()
+                    word_boundary_threshold = coord_range * 0.1
             else:
-                word_boundary_threshold = 10  # fallback
+                # Single point: use a fraction of coordinate range
+                coord_range = np.ptp(coords_2d, axis=0).max()
+                word_boundary_threshold = max(coord_range * 0.1, 10.0)
+            
+            # Track whether this is the first point
+            is_first_point = True
+            prev_x, prev_y = 0, 0
+            prev_eos = 1.0
+            p = ""
             
             for x, y, eos in zip(*strokes.T):
                 # Calculate distance from previous point
                 distance = np.sqrt((x - prev_x)**2 + (y - prev_y)**2)
                 
                 # Use 'M' (move) only for:
-                # 1. The first point (prev_eos == 1.0 and prev_x == 0)
+                # 1. The first point
                 # 2. Large gaps that indicate word boundaries
-                if prev_eos == 1.0:
-                    if prev_x == 0 and prev_y == 0:
-                        # First point, always use M
-                        p += 'M{},{} '.format(x, y)
-                    elif distance > word_boundary_threshold:
-                        # Large gap, likely a space between words
-                        p += 'M{},{} '.format(x, y)
-                    else:
-                        # Small gap, within a word - use L to keep pen down
-                        p += 'L{},{} '.format(x, y)
+                if is_first_point:
+                    p += 'M{},{} '.format(x, y)
+                    is_first_point = False
+                elif prev_eos == 1.0 and distance > word_boundary_threshold:
+                    # Large gap, likely a space between words
+                    p += 'M{},{} '.format(x, y)
                 else:
-                    # Normal continuation, use L
+                    # Normal continuation or small gap within a word - use L to keep pen down
                     p += 'L{},{} '.format(x, y)
                 
                 prev_x, prev_y = x, y
