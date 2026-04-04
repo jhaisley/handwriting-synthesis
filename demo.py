@@ -165,10 +165,61 @@ class Hand(object):
                 left_padding = 60
                 strokes[:, 0] += left_padding
 
+            # Calculate threshold for detecting word boundaries
+            # Large gaps typically indicate spaces between words
+            
+            # Use 2D distances for consistency
+            coords_2d = strokes[:, :2]
+            if len(coords_2d) > 1:
+                # Calculate distances between consecutive points
+                diffs = np.diff(coords_2d, axis=0)
+                distances = np.linalg.norm(diffs, axis=1)
+                non_zero_distances = distances[distances > 0]
+                
+                if len(non_zero_distances) > 0:
+                    median_distance = np.median(non_zero_distances)
+                    # Threshold: gaps larger than 3x median indicate word boundaries
+                    # This factor was chosen empirically to distinguish between 
+                    # letter spacing (typically 1-2x median) and word spacing
+                    WORD_BOUNDARY_FACTOR = 3.0
+                    word_boundary_threshold = WORD_BOUNDARY_FACTOR * median_distance
+                else:
+                    # Fallback: use a fraction of the coordinate range, with a minimum value
+                    coord_range = np.ptp(coords_2d, axis=0).max()
+                    word_boundary_threshold = max(coord_range * 0.1, 10.0)
+            else:
+                # Single point: use a fraction of coordinate range
+                coord_range = np.ptp(coords_2d, axis=0).max()
+                word_boundary_threshold = max(coord_range * 0.1, 10.0)
+            
+            # Track whether this is the first point
+            is_first_point = True
+            prev_x, prev_y = 0, 0
             prev_eos = 1.0
-            p = "M{},{} ".format(0, 0)
+            p = ""
+            
             for x, y, eos in zip(*strokes.T):
-                p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
+                # Calculate distance from previous point
+                distance = np.sqrt((x - prev_x)**2 + (y - prev_y)**2)
+                
+                # Use 'M' (move) for:
+                # 1. The first point
+                # 2. Any explicit pen lift from the model (prev_eos == 1.0)
+                # 3. Large gaps that indicate word boundaries
+                if is_first_point:
+                    p += 'M{},{} '.format(x, y)
+                    is_first_point = False
+                elif prev_eos == 1.0:
+                    # Model signaled end-of-stroke: start a new subpath
+                    p += 'M{},{} '.format(x, y)
+                elif distance > word_boundary_threshold:
+                    # Large gap, likely a space between words
+                    p += 'M{},{} '.format(x, y)
+                else:
+                    # Normal continuation or small gap within a word - keep pen down
+                    p += 'L{},{} '.format(x, y)
+                
+                prev_x, prev_y = x, y
                 prev_eos = eos
             path = svgwrite.path.Path(p)
             path = path.stroke(color=color, width=width, linecap='round').fill("none")
