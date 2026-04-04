@@ -167,7 +167,6 @@ class Hand(object):
 
             # Calculate threshold for detecting word boundaries
             # Large gaps typically indicate spaces between words
-            x_coords = strokes[:, 0]
             
             # Use 2D distances for consistency
             coords_2d = strokes[:, :2]
