@@ -184,9 +184,9 @@ class Hand(object):
                     WORD_BOUNDARY_FACTOR = 3.0
                     word_boundary_threshold = WORD_BOUNDARY_FACTOR * median_distance
                 else:
-                    # Fallback: use a fraction of the coordinate range
+                    # Fallback: use a fraction of the coordinate range, with a minimum value
                     coord_range = np.ptp(coords_2d, axis=0).max()
-                    word_boundary_threshold = coord_range * 0.1
+                    word_boundary_threshold = max(coord_range * 0.1, 10.0)
             else:
                 # Single point: use a fraction of coordinate range
                 coord_range = np.ptp(coords_2d, axis=0).max()
