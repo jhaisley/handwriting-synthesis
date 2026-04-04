@@ -203,17 +203,21 @@ class Hand(object):
                 # Calculate distance from previous point
                 distance = np.sqrt((x - prev_x)**2 + (y - prev_y)**2)
                 
-                # Use 'M' (move) only for:
+                # Use 'M' (move) for:
                 # 1. The first point
-                # 2. Large gaps that indicate word boundaries
+                # 2. Any explicit pen lift from the model (prev_eos == 1.0)
+                # 3. Large gaps that indicate word boundaries
                 if is_first_point:
                     p += 'M{},{} '.format(x, y)
                     is_first_point = False
-                elif prev_eos == 1.0 and distance > word_boundary_threshold:
+                elif prev_eos == 1.0:
+                    # Model signaled end-of-stroke: start a new subpath
+                    p += 'M{},{} '.format(x, y)
+                elif distance > word_boundary_threshold:
                     # Large gap, likely a space between words
                     p += 'M{},{} '.format(x, y)
                 else:
-                    # Normal continuation or small gap within a word - use L to keep pen down
+                    # Normal continuation or small gap within a word - keep pen down
                     p += 'L{},{} '.format(x, y)
                 
                 prev_x, prev_y = x, y
